@@ -2,27 +2,33 @@
 
 import React, { useState } from 'react';
 import { Project } from '@/types/project';
-import { X, Plus, Sparkles } from 'lucide-react';
+import { X, Plus, Sparkles, Terminal } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface AddProjectDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (project: Omit<Project, 'history' | 'uptime24h' | 'responseTime'>) => void;
+  onAdd: (project: Omit<Project, 'history' | 'uptime24h' | 'responseTime' | 'isLocalActive' | 'activePid'>) => void;
+  project?: Project;
+  onUpdate?: (id: string, updates: Partial<Project>) => void;
 }
 
 const themeColors: Project['colorTheme'][] = ['blue', 'violet', 'emerald', 'amber', 'rose', 'cyan'];
 
-export default function AddProjectDialog({ isOpen, onClose, onAdd }: AddProjectDialogProps) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [tagsInput, setTagsInput] = useState('');
-  const [colorTheme, setColorTheme] = useState<Project['colorTheme']>('blue');
-  const [status, setStatus] = useState<Project['status']>('online');
-  const [homepageUrl, setHomepageUrl] = useState('');
-  const [appUrl, setAppUrl] = useState('');
-  const [repoUrl, setRepoUrl] = useState('');
-  const [docsUrl, setDocsUrl] = useState('');
+export default function AddProjectDialog({ isOpen, onClose, onAdd, project, onUpdate }: AddProjectDialogProps) {
+  const [name, setName] = useState(project?.name || '');
+  const [description, setDescription] = useState(project?.description || '');
+  const [tagsInput, setTagsInput] = useState(project?.tags.join(', ') || '');
+  const [colorTheme, setColorTheme] = useState<Project['colorTheme']>(project?.colorTheme || 'blue');
+  const [status, setStatus] = useState<Project['status']>(project?.status || 'online');
+  const [homepageUrl, setHomepageUrl] = useState(project?.homepageUrl || '');
+  const [appUrl, setAppUrl] = useState(project?.appUrl || '');
+  const [repoUrl, setRepoUrl] = useState(project?.repoUrl || '');
+  const [docsUrl, setDocsUrl] = useState(project?.docsUrl || '');
+  
+  // Local project launch details
+  const [localPath, setLocalPath] = useState(project?.localPath || '');
+  const [startCommand, setStartCommand] = useState(project?.startCommand || '');
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -60,18 +66,28 @@ export default function AddProjectDialog({ isOpen, onClose, onAdd }: AddProjectD
       .map(tag => tag.trim())
       .filter(tag => tag.length > 0);
 
-    onAdd({
-      id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    const projectData = {
       name,
       description,
       tags: tags.length > 0 ? tags : ['Web App'],
       colorTheme,
-      status,
+      status: localPath.trim() ? 'offline' : status,
       homepageUrl: homepageUrl.trim() || undefined,
       appUrl: appUrl.trim() || undefined,
       repoUrl: repoUrl.trim() || undefined,
       docsUrl: docsUrl.trim() || undefined,
-    });
+      localPath: localPath.trim() || undefined,
+      startCommand: startCommand.trim() || undefined,
+    };
+
+    if (project && onUpdate) {
+      onUpdate(project.id, projectData);
+    } else {
+      onAdd({
+        ...projectData,
+        id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      });
+    }
 
     // Reset Form
     setName('');
@@ -83,6 +99,8 @@ export default function AddProjectDialog({ isOpen, onClose, onAdd }: AddProjectD
     setAppUrl('');
     setRepoUrl('');
     setDocsUrl('');
+    setLocalPath('');
+    setStartCommand('');
     setErrors({});
     onClose();
   };
@@ -115,24 +133,24 @@ export default function AddProjectDialog({ isOpen, onClose, onAdd }: AddProjectD
                   <Sparkles size={16} />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-100">Add New Project Link</h3>
-                  <p className="text-[10px] text-slate-400 font-medium">Link and tag your apps without code imports</p>
+                  <h3 className="text-base font-bold text-slate-100">{project ? 'Edit Project Portal' : 'Add New Project Portal'}</h3>
+                  <p className="text-[10px] text-slate-400 font-medium">{project ? 'Modify configurations for this portal card.' : 'Link URLs or configure local shell command scripts.'}</p>
                 </div>
               </div>
               <button
                 onClick={onClose}
-                className="p-1.5 rounded-lg hover:bg-slate-800 border border-transparent hover:border-slate-700 text-slate-400 hover:text-slate-200 transition-all"
+                className="p-1.5 rounded-lg hover:bg-slate-800 border border-transparent hover:border-slate-700 text-slate-400 hover:text-slate-200 transition-all cursor-pointer"
               >
                 <X size={16} />
               </button>
             </div>
 
             {/* Modal Body / Form */}
-            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Project Name */}
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Project Name</label>
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Project Name</label>
                   <input
                     type="text"
                     value={name}
@@ -146,7 +164,7 @@ export default function AddProjectDialog({ isOpen, onClose, onAdd }: AddProjectD
                 {/* Theme & Initial Status */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Theme Color</label>
+                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Theme Color</label>
                     <select
                       value={colorTheme}
                       onChange={e => setColorTheme(e.target.value as Project['colorTheme'])}
@@ -160,11 +178,12 @@ export default function AddProjectDialog({ isOpen, onClose, onAdd }: AddProjectD
                     </select>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Status</label>
+                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Default Status</label>
                     <select
                       value={status}
+                      disabled={!!localPath.trim()} // local path projects default start offline
                       onChange={e => setStatus(e.target.value as Project['status'])}
-                      className="glass-input cursor-pointer"
+                      className="glass-input cursor-pointer disabled:opacity-50"
                     >
                       <option value="online" className="bg-slate-900 text-emerald-400">Online</option>
                       <option value="offline" className="bg-slate-900 text-rose-400">Offline</option>
@@ -177,12 +196,12 @@ export default function AddProjectDialog({ isOpen, onClose, onAdd }: AddProjectD
 
               {/* Description */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Description</label>
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Description</label>
                 <textarea
                   value={description}
                   onChange={e => setDescription(e.target.value)}
-                  placeholder="Describe your project, features, stack..."
-                  rows={3}
+                  placeholder="Describe your project, features, tech stack..."
+                  rows={2}
                   className="glass-input resize-none"
                 />
                 {errors.description && <span className="text-[10px] text-rose-400 font-medium">{errors.description}</span>}
@@ -190,7 +209,7 @@ export default function AddProjectDialog({ isOpen, onClose, onAdd }: AddProjectD
 
               {/* Tech Stack Tags */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Tech Stack Tags (comma separated)</label>
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Tech Stack Tags (comma separated)</label>
                 <input
                   type="text"
                   value={tagsInput}
@@ -198,6 +217,38 @@ export default function AddProjectDialog({ isOpen, onClose, onAdd }: AddProjectD
                   placeholder="e.g. Next.js, FastAPI, PostgreSQL, Docker"
                   className="glass-input"
                 />
+              </div>
+
+              {/* Local Launch Controls */}
+              <div className="border-t border-slate-800/60 pt-4 space-y-3">
+                <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <Terminal size={12} className="text-indigo-400" />
+                  Local Launch Script (Optional)
+                </h4>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-semibold text-slate-400">Absolute Project Directory Path</span>
+                    <input
+                      type="text"
+                      value={localPath}
+                      onChange={e => setLocalPath(e.target.value)}
+                      placeholder="e.g. C:/Users/rohit/projects/my-app"
+                      className="glass-input font-mono text-xs"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-semibold text-slate-400">Start Shell Command</span>
+                    <input
+                      type="text"
+                      value={startCommand}
+                      onChange={e => setStartCommand(e.target.value)}
+                      placeholder="e.g. npm run dev or python main.py"
+                      className="glass-input font-mono text-xs"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Links Section */}
@@ -260,16 +311,16 @@ export default function AddProjectDialog({ isOpen, onClose, onAdd }: AddProjectD
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 text-xs font-semibold rounded-lg hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-300 transition-colors"
+                  className="px-4 py-2 text-xs font-semibold rounded-lg hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-300 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-semibold rounded-lg bg-indigo-500 hover:bg-indigo-400 text-slate-100 flex items-center gap-1.5 transition-colors"
+                  className="px-4 py-2 text-xs font-semibold rounded-lg bg-indigo-500 hover:bg-indigo-400 text-slate-100 flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  <Plus size={14} />
-                  Add Link
+                  {!project && <Plus size={14} />}
+                  {project ? 'Save Changes' : 'Add Portal'}
                 </button>
               </div>
             </form>

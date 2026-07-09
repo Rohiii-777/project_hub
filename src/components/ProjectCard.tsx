@@ -1,9 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Project } from '@/types/project';
-import { ExternalLink, FileText, Play, Server, Trash2, ArrowUpRight } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { 
+  ExternalLink, FileText, Play, Trash2, ArrowUpRight, 
+  Terminal, Square, Loader2, RefreshCw, Pencil 
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const Github = ({ size = 12, ...props }: React.SVGProps<SVGSVGElement> & { size?: number }) => (
   <svg
@@ -25,6 +28,8 @@ const Github = ({ size = 12, ...props }: React.SVGProps<SVGSVGElement> & { size?
 interface ProjectCardProps {
   project: Project;
   onDelete?: (id: string) => void;
+  onRefresh?: () => void;
+  onEdit?: (project: Project) => void;
 }
 
 const themeStyles = {
@@ -79,9 +84,75 @@ const statusConfigs = {
   maintenance: { label: 'Maintenance', color: 'bg-cyan-500', text: 'text-cyan-400 border-cyan-500/20' }
 };
 
-export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
+export default function ProjectCard({ project, onDelete, onRefresh, onEdit }: ProjectCardProps) {
   const styles = themeStyles[project.colorTheme || 'blue'];
   const status = statusConfigs[project.status || 'online'];
+  
+  const [isActionPending, setIsActionPending] = useState(false);
+  const [isLogsExpanded, setIsLogsExpanded] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
+  const terminalRef = useRef<HTMLDivElement | null>(null);
+
+  // Poll logs if expanded and process is active
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+
+    const fetchLogs = async () => {
+      try {
+        const res = await fetch(`/api/process/${project.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setLogs(data.logs || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch process logs:', err);
+      }
+    };
+
+    if (isLogsExpanded) {
+      fetchLogs(); // initial load
+      // Poll every 2 seconds
+      intervalId = setInterval(fetchLogs, 2000);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isLogsExpanded, project.id, project.isLocalActive]);
+
+  // Auto-scroll logs terminal to bottom on content updates
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  }, [logs, isLogsExpanded]);
+
+  const handleToggleProcess = async () => {
+    setIsActionPending(true);
+    const action = project.isLocalActive ? 'stop' : 'start';
+    
+    try {
+      const res = await fetch(`/api/process/${project.id}?action=${action}`, {
+        method: 'POST',
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to trigger process change');
+      }
+
+      if (action === 'start') {
+        setIsLogsExpanded(true); // Auto expand logs when starting
+      }
+      
+      if (onRefresh) onRefresh();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(msg || `Failed to ${action} process.`);
+    } finally {
+      setIsActionPending(false);
+    }
+  };
 
   // SVG Sparkline calculation
   const generateSparkline = (history: number[]) => {
@@ -90,7 +161,6 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
     const height = 30;
     const padding = 2;
 
-    // Filter out 0s (downtime) to find min/max response times, default to 10-200ms
     const activeValues = history.filter(v => v > 0);
     const maxVal = activeValues.length > 0 ? Math.max(...activeValues) : 200;
     const minVal = activeValues.length > 0 ? Math.min(...activeValues) : 10;
@@ -98,7 +168,6 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
 
     const points = history.map((val, index) => {
       const x = (index / (history.length - 1)) * width;
-      // If down (0), draw it at the baseline
       const y = val === 0 
         ? height - padding 
         : height - padding - ((val - minVal) / range) * (height - padding * 2);
@@ -126,21 +195,30 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
       <div>
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-2.5">
-            <div className={`w-2.5 h-2.5 rounded-full ${status.color} relative`}>
-              {project.status === 'online' && (
-                <span className={`absolute -inset-1 rounded-full ${status.color} opacity-40 pulse-soft`} />
+            <div className={`w-2.5 h-2.5 rounded-full ${project.isLocalActive ? 'bg-emerald-500' : status.color} relative`}>
+              {(project.status === 'online' || project.isLocalActive) && (
+                <span className={`absolute -inset-1 rounded-full ${project.isLocalActive ? 'bg-emerald-500' : status.color} opacity-40 pulse-soft`} />
               )}
             </div>
-            <span className={`text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full border bg-slate-950/20 ${status.text}`}>
-              {status.label}
+            <span className={`text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full border bg-slate-950/20 ${project.isLocalActive ? 'text-emerald-400 border-emerald-500/20' : status.text}`}>
+              {project.isLocalActive ? 'Active Local' : status.label}
             </span>
           </div>
 
-          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            {onEdit && (
+              <button
+                onClick={() => onEdit(project)}
+                className="p-1.5 rounded-lg bg-slate-950/40 hover:bg-indigo-500/20 border border-slate-800 hover:border-indigo-500/30 text-slate-400 hover:text-indigo-400 transition-all cursor-pointer"
+                title="Edit Project Details"
+              >
+                <Pencil size={13} />
+              </button>
+            )}
             {onDelete && (
               <button
                 onClick={() => onDelete(project.id)}
-                className="p-1.5 rounded-lg bg-slate-950/40 hover:bg-rose-500/20 border border-slate-800 hover:border-rose-500/30 text-slate-400 hover:text-rose-400 transition-all"
+                className="p-1.5 rounded-lg bg-slate-950/40 hover:bg-rose-500/20 border border-slate-800 hover:border-rose-500/30 text-slate-400 hover:text-rose-400 transition-all cursor-pointer"
                 title="Delete Project Link"
               >
                 <Trash2 size={13} />
@@ -153,7 +231,16 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
         <div className="space-y-2 mb-4">
           <h4 className="text-lg font-bold text-slate-100 group-hover:text-white flex items-center gap-1.5">
             {project.name}
-            <ArrowUpRight size={16} className="text-slate-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-200" />
+            {project.appUrl || project.homepageUrl ? (
+              <a 
+                href={project.appUrl || project.homepageUrl} 
+                target="_blank" 
+                rel="noreferrer"
+                className="hover:text-indigo-400 transition-colors"
+              >
+                <ArrowUpRight size={16} className="text-slate-500 hover:text-indigo-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-200" />
+              </a>
+            ) : null}
           </h4>
           <p className="text-xs text-slate-400 leading-relaxed font-medium line-clamp-3">
             {project.description}
@@ -201,7 +288,7 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
 
         {/* Tech Badges */}
         <div className="flex flex-wrap gap-1.5">
-          {project.tags.map(tag => (
+          {project.tags.map((tag) => (
             <span
               key={tag}
               className={`text-[9px] font-semibold px-2 py-0.5 rounded-md border ${styles.badge}`}
@@ -211,57 +298,142 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
           ))}
         </div>
 
+        {/* Executable Path Info */}
+        {project.localPath && (
+          <div className="p-2 rounded bg-slate-950/30 border border-slate-900/60 font-mono text-[9px] text-slate-400 flex flex-col gap-0.5">
+            <span className="text-slate-500 font-bold uppercase tracking-wider text-[8px]">Local Script:</span>
+            <span className="truncate">{project.localPath}</span>
+            <span className="text-indigo-400 font-medium truncate">{project.startCommand}</span>
+          </div>
+        )}
+
         {/* Bottom Actions Row */}
-        <div className="flex items-center gap-2 border-t border-slate-900 pt-4 mt-2">
-          {project.appUrl && (
-            <a
-              href={project.appUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-900 bg-slate-100 hover:bg-white rounded-lg py-2 transition-colors border border-transparent"
-            >
-              <Play size={11} className="fill-current" />
-              Launch App
-            </a>
-          )}
-          
-          <div className="flex gap-2">
-            {project.homepageUrl && (
+        <div className="flex flex-col gap-2 border-t border-slate-900 pt-4 mt-2">
+          <div className="flex items-center gap-2">
+            {/* Play/Stop Local Process Trigger */}
+            {project.localPath && project.startCommand ? (
+              <button
+                onClick={handleToggleProcess}
+                disabled={isActionPending}
+                className={`flex-1 flex items-center justify-center gap-1.5 text-[11px] font-bold rounded-lg py-2 transition-colors border cursor-pointer ${
+                  project.isLocalActive
+                    ? 'text-rose-400 bg-rose-500/10 border-rose-500/20 hover:bg-rose-500/20'
+                    : 'text-slate-900 bg-slate-100 hover:bg-white border-transparent'
+                }`}
+              >
+                {isActionPending ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : project.isLocalActive ? (
+                  <>
+                    <Square size={11} className="fill-current" />
+                    Stop Server
+                  </>
+                ) : (
+                  <>
+                    <Play size={11} className="fill-current" />
+                    Start Server
+                  </>
+                )}
+              </button>
+            ) : project.appUrl ? (
               <a
-                href={project.homepageUrl}
+                href={project.appUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="p-2 rounded-lg bg-slate-950/40 hover:bg-slate-900/60 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-all"
-                title="Homepage"
+                className="flex-1 flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-900 bg-slate-100 hover:bg-white rounded-lg py-2 transition-colors border border-transparent"
               >
-                <ExternalLink size={12} />
+                <Play size={11} className="fill-current" />
+                Launch App
               </a>
-            )}
-            
-            {project.repoUrl && (
-              <a
-                href={project.repoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-2 rounded-lg bg-slate-950/40 hover:bg-slate-900/60 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-all"
-                title="Code Repository"
+            ) : null}
+
+            {/* Logs Button */}
+            {project.localPath && project.startCommand && (
+              <button
+                onClick={() => setIsLogsExpanded(!isLogsExpanded)}
+                className={`p-2 rounded-lg border transition-all cursor-pointer ${
+                  isLogsExpanded
+                    ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                    : 'bg-slate-950/40 hover:bg-slate-900/60 border-slate-800 text-slate-300 hover:text-white'
+                }`}
+                title="Terminal Logs"
               >
-                <Github size={12} />
-              </a>
+                <Terminal size={12} />
+              </button>
             )}
 
-            {project.docsUrl && (
-              <a
-                href={project.docsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-2 rounded-lg bg-slate-950/40 hover:bg-slate-900/60 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-all"
-                title="Documentation"
-              >
-                <FileText size={12} />
-              </a>
-            )}
+            <div className="flex gap-2">
+              {project.homepageUrl && (
+                <a
+                  href={project.homepageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-lg bg-slate-950/40 hover:bg-slate-900/60 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-all"
+                  title="Homepage"
+                >
+                  <ExternalLink size={12} />
+                </a>
+              )}
+              
+              {project.repoUrl && (
+                <a
+                  href={project.repoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-lg bg-slate-950/40 hover:bg-slate-900/60 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-all"
+                  title="Code Repository"
+                >
+                  <Github size={12} />
+                </a>
+              )}
+
+              {project.docsUrl && (
+                <a
+                  href={project.docsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-lg bg-slate-950/40 hover:bg-slate-900/60 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-all"
+                  title="Documentation"
+                >
+                  <FileText size={12} />
+                </a>
+              )}
+            </div>
           </div>
+
+          {/* Terminal log panel */}
+          <AnimatePresence>
+            {isLogsExpanded && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-2 flex flex-col gap-1.5"
+              >
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                    <Terminal size={8} /> Shell Console Output
+                  </span>
+                  <button 
+                    onClick={() => setLogs([])}
+                    className="text-[8px] font-bold text-indigo-400/80 hover:text-indigo-400 flex items-center gap-0.5 transition-colors cursor-pointer"
+                  >
+                    <RefreshCw size={8} /> Clear Buffer
+                  </button>
+                </div>
+                <div ref={terminalRef} className="p-3 rounded-lg bg-[#04050a]/90 border border-slate-900 font-mono text-[9px] text-slate-300 max-h-40 overflow-y-auto flex flex-col gap-1 scrollbar-thin select-text scroll-smooth">
+                  {logs.map((log, i) => (
+                    <div key={i} className="whitespace-pre-wrap break-all leading-normal border-b border-transparent hover:bg-slate-950/50">
+                      {log}
+                    </div>
+                  ))}
+                  {logs.length === 0 && (
+                    <div className="text-slate-600 italic">No output logs received. Start the server to see log traces.</div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </motion.div>

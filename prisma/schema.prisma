@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id             String    @id @default(uuid())
+  username       String    @unique
+  passwordHash   String
+  githubUsername String?
+  githubToken    String?
+  projects       Project[]
+  createdAt      DateTime  @default(now())
+}
+
+model Project {
+  id            String   @id
+  name          String
+  description   String?
+  tags          String   // JSON string of tags array
+  homepageUrl   String?
+  appUrl        String?
+  repoUrl       String?
+  docsUrl       String?
+  status        String   // 'online' | 'offline' | 'sleeping' | 'maintenance'
+  uptime24h     Float    @default(100.0)
+  responseTime  Int      @default(0)
+  history       String   // JSON array of latency numbers (e.g., [42, 50, 48])
+  colorTheme    String   @default("blue")
+  
+  // Local Development Fields
+  localPath     String?  // Filepath to directory, e.g., "C:/projects/my-app"
+  startCommand  String?  // e.g., "npm run dev" or "python main.py"
+  isLocalActive Boolean  @default(false)
+  activePid     Int?     // Process ID when running
+  
+  // GitHub Meta
+  isGithubRepo  Boolean  @default(false)
+  githubRepoId  Int?
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  createdAt     DateTime @default(now())
+}

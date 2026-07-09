@@ -12,4 +12,14 @@ export interface Project {
   responseTime: number;
   history: number[]; // Last 10 latency metrics in ms
   colorTheme: 'violet' | 'emerald' | 'amber' | 'blue' | 'rose' | 'cyan';
+  
+  // Local process execution fields
+  localPath?: string;
+  startCommand?: string;
+  isLocalActive?: boolean;
+  activePid?: number;
+  
+  // GitHub source meta
+  isGithubRepo?: boolean;
+  githubRepoId?: number;
 }
