@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Project } from '@/types/project';
 import StatsOverview from '@/components/StatsOverview';
 import ProjectCard from '@/components/ProjectCard';
@@ -43,12 +43,16 @@ export default function DashboardClient({ initialProjects, username }: Dashboard
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   
   const [isScanning, setIsScanning] = useState(false);
-  const [lastScanTime, setLastScanTime] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('hub-last-scan-time') || 'Never';
+  const [lastScanTime, setLastScanTime] = useState<string>('Never');
+
+  useEffect(() => {
+    const cachedScan = sessionStorage.getItem('hub-last-scan-time');
+    if (cachedScan) {
+      setTimeout(() => {
+        setLastScanTime(cachedScan);
+      }, 0);
     }
-    return 'Never';
-  });
+  }, []);
 
   const handleCloseAdd = () => {
     setEditingProject(null);

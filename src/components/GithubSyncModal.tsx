@@ -51,6 +51,7 @@ export default function GithubSyncModal({ isOpen, onClose, onImportSuccess }: Gi
   const handleClose = () => {
     setError(null);
     setSuccessMsg(null);
+    setRepos([]); // Clear repositories list on close
     onClose();
   };
 
@@ -62,6 +63,7 @@ export default function GithubSyncModal({ isOpen, onClose, onImportSuccess }: Gi
       const result = await fetchGithubRepos();
       if (result.error) {
         setError(result.error);
+        setRepos([]); // Clear stale list on API error
         if (result.error.includes('credentials')) {
           setActiveTab('config');
         }
@@ -71,6 +73,7 @@ export default function GithubSyncModal({ isOpen, onClose, onImportSuccess }: Gi
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg || 'Failed to connect to GitHub.');
+      setRepos([]); // Clear stale list on exception
     } finally {
       setIsSyncing(false);
     }
@@ -92,6 +95,7 @@ export default function GithubSyncModal({ isOpen, onClose, onImportSuccess }: Gi
         })
         .catch(() => {
           setActiveTab('config');
+          setRepos([]);
         });
     }
   }, [isOpen]);
@@ -116,6 +120,7 @@ export default function GithubSyncModal({ isOpen, onClose, onImportSuccess }: Gi
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg || 'Failed to save credentials.');
+      setRepos([]); // Clear repositories list on config save error
     } finally {
       setIsSaving(false);
     }
